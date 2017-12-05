@@ -1,7 +1,7 @@
 ---
 title: "Health and Economic consequences of weather events"
 author: "Christoffer Haukvik"
-date: "4 Dec 2017"
+date: "5 Dec 2017"
 output: html_document
 keep_md: true
 ---
@@ -9,6 +9,12 @@ keep_md: true
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 knitr::opts_chunk$set(fig.path='figure/')
+
+## Loading required libraries
+library(dplyr)
+library(ggplot2)
+library(knitr)
+library(reshape2)
 ```
 
 ## Health and Economic consequences of weather events
@@ -34,16 +40,11 @@ data <- read.csv("data.csv.bz2")
 In order to improve the processing of the data, we re-format dates
 ```{r dataProcessing}
 # Formatting dates as dates
-#data$BGN_DATE <- as.Date(as.character(data$BGN_DATE), "%m/%d/%Y")
-#data$END_DATE <- as.Date(as.character(data$END_DATE), "%m/%d/%Y")
+data$BGN_DATE <- as.Date(data$BGN_DATE, "%m/%d/%Y")
+data$END_DATE <- as.Date(data$END_DATE, "%m/%d/%Y")
 
 ```
 
-Consider the following fields:
-Duration (end - begin)
-Fatalities
-Injuries
-Total expenses (propdmgexp + cropdmgexp)
 
 ## Results
 The analysis has addressed two specific questions:
@@ -55,36 +56,46 @@ To do this, we first summarize the measurements to display a table of the top 10
 
 ```{r healthEvents}
 # Subsetting events according to fatalities and injuries
-library(dplyr)
-library(knitr)
-#1. Table of top 10 fatality and injury causes
+
 healthData <- data %>%
      select(EVTYPE, FATALITIES, INJURIES) %>%
      group_by(EVTYPE) %>%
-     summarize(Fatalities = sum(FATALITIES),
+     summarize(Events = length(EVTYPE),
+               Fatalities = sum(FATALITIES),
                Injuries = sum(INJURIES),
                MeanFatalities = round(mean(FATALITIES), 2),
                MeanInjuries = round(mean(INJURIES), 2)) %>%
      arrange(desc(Fatalities))
-kable(head(healthData, 10))
+
+#1. Table of top 10 fatality and injury causes
+kable(head(healthData, 10), row.names = TRUE, 
+      col.names = c("Weather event", "Events", "Fatalities", "Injuries", 
+                    "Fatalities (mean)", "Injuries (mean)"), 
+     caption = "Weather events with greatest health effects")
 ```
-
-
+As the table illustrates, tornados are by far the weather event which has the most fatal outcomes. Of the listed events, it also causes the most injuries. Nevertheless, on a per-event basis, it is not as fatal as other of the events listes (in particular heat related events).
 
 ```{r fatalEvents}
-library(ggplot2)
-library(reshape2)
-
 #2. Figure of top 10 fatality causes and development over time
-topFatality <- head(arrange(healthData, desc(Fatality))$EVTYPE, 10)
-fatalityEvents <- subset(healthData, EVTYPE %in% topEvents)
+topFatalities <- arrange(healthData, desc(Fatalities))[1:10, "EVTYPE"]
+
+dFatalities <- data %>%
+     filter(EVTYPE %in% topFatalities$EVTYPE) %>%
+     group_by(EVTYPE, BGN_DATE) %>%
+     summarize(Fatalities = sum(FATALITIES))
+
+ggplot(data = dFatalities, aes(x=BGN_DATE, y=Fatalities)) +
+     geom_line(aes(col=EVTYPE)) + 
+     theme_light()
+
 ```
 
 
 
 ```{r injuryEvents}
 #3. Figure of top 10 injury causes and development over time
-
+topFatality <- head(arrange(healthData, desc(Fatality))$EVTYPE, 10)
+fatalityEvents <- subset(healthData, EVTYPE %in% topEvents)
 ```
 
 
