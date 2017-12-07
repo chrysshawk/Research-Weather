@@ -38,7 +38,7 @@ data <- read.csv("data.csv.bz2")
 
 2. Data transformation
 In order to improve the processing of the data, we re-format dates
-```{r dataProcessing}
+```{r dataPreProcessing}
 # Formatting dates as dates
 data$BGN_DATE <- as.Date(data$BGN_DATE, "%m/%d/%Y")
 data$END_DATE <- as.Date(data$END_DATE, "%m/%d/%Y")
@@ -48,13 +48,16 @@ data$END_DATE <- as.Date(data$END_DATE, "%m/%d/%Y")
 
 ## Results
 The analysis has addressed two specific questions:
-1. Across the United States, which types of events are most harmful with respect to population health?
+
+### 1. Across the United States, which types of events are most harmful with respect to population health?
+
+The data we are evaluating is measuring how weather events indirectly cause fatalities and injuries.
 
 Population harm has been measured in two categories; number of fatalities, and number of injuries. Since the former is the more serious of the two, we have chosen to primarily investigate which weather events are most fatal.
 
 To do this, we first summarize the measurements to display a table of the top 10 events which cause the most fatalities. For comparison, we also include the number of injuries which are associated to these events. In order to give an estimate of the percentage risk associated to any given event, we have also included statistics on the mean number of fatalities and injuries are associated with each event.
 
-```{r healthEvents}
+```{r healthStats}
 # Subsetting events according to fatalities and injuries
 
 healthData <- data %>%
@@ -75,64 +78,128 @@ kable(head(healthData, 10), row.names = TRUE,
 ```
 As the table illustrates, tornados are by far the weather event which has the most fatal outcomes. Of the listed events, it also causes the most injuries. Nevertheless, on a per-event basis, it is not as fatal as other of the events listes (in particular heat related events).
 
-```{r fatalEvents}
-#2. Figure of top 10 fatality causes and development over time
-topFatalities <- arrange(healthData, desc(Fatalities))[1:10, "EVTYPE"]
+```{r healthEvents}
+#2. Creating facet grid with horizontal axis of most severe events for both fatalities and injuries
 
-dFatalities <- data %>%
-     filter(EVTYPE %in% topFatalities$EVTYPE) %>%
-     group_by(EVTYPE, BGN_DATE) %>%
-     summarize(Fatalities = sum(FATALITIES))
+# Determining most severe 8 events in each category and combining them
+topFatalities <- arrange(healthData, desc(Fatalities))$EVTYPE[1:8]
+topInjuries <- arrange(healthData, desc(Injuries))$EVTYPE[1:8]
+topEvents <- unique(combine(topFatalities, topInjuries))
 
-ggplot(data = dFatalities, aes(x=BGN_DATE, y=Fatalities)) +
-     geom_line(aes(col=EVTYPE)) + 
-     theme_light()
+# Subsetting health data based on these events
+topSeverity <- subset(healthData, EVTYPE %in% topEvents,
+                      select = c(EVTYPE, Fatalities, Injuries))
+
+# Melting fatalities/injuries into factors
+healthEvents <- 
+     melt(topSeverity, id.vars = "EVTYPE", 
+          measure.vars = c("Fatalities", "Injuries"), 
+          value.name = "Incidents", variable.name = "Category")
+
+# Ranking events based on fatalities, then injuries
+healthEvents <- cbind(healthEvents, Rank = seq(1:nrow(healthEvents)))
+
+# Presenting data in plot
+ggplot(data = healthEvents, aes(x=reorder(EVTYPE, -Rank), 
+                                y=Incidents, fill=EVTYPE)) +
+     geom_col() + 
+     geom_text(aes(label=Incidents), size = 3, position = "fill", 
+               hjust = -1.4) +
+     guides(fill=FALSE) +
+     theme_light() +
+     coord_flip() +
+     facet_wrap(~Category, scales = "free_x") +
+     theme(strip.background = element_rect(colour="black", fill="black")) +
+     labs(title = "Severity of weather events on health in the US 1951-2011",
+          x = "Weather event", y = "Number of Health incidents")
+```
+
+As we can see, tornados have the most sever effect on health effects, both in terms of fatalities and injuries. Second, excessive heat is another major factor in health effects.
+
+
+### 2. Across the United States, which types of events have the greatest economic consequences?
+
+```{r econStats}
+
+# Extracting relevant data
+econData <- subset(data, select = c(EVTYPE, PROPDMG, PROPDMGEXP, 
+                                    CROPDMG, CROPDMGEXP), na.rm = TRUE)
+
+# Cleaning relevant data
+
+# Creating dataframe for converting known damange expense multipliers
+convExp <- data.frame(expUnit = c("k", "K", "m", "M", "b", "B"),
+                      Factor = c(10^3, 10^3, 10^6, 10^6, 10^9, 10^9))
+
+# Collecting the EXP (cash multiplier) variables into one
+expUnit <- c(as.character(econData$PROPDMGEXP), 
+              as.character(econData$CROPDMGEXP))
+
+# Melting dataframe
+econDF <- melt(econData, id.vars = "EVTYPE",
+               measure.vars = c("PROPDMG", "CROPDMG"),
+               value.name = "Expense", variable.name = "DamageType")
+
+# Assigning units to the melted dataframe
+econDF <- cbind(econDF, expUnit)
+
+# Excluding any 0 expenses
+econDF <- econDF[econDF$Expense > 0, ]
+
+# Creating DF which containins ONLY known expense units
+econEvents <- inner_join(econDF, convExp, by="expUnit")
+
+# Getting some info on the events which were excluded
+exclEvents <- anti_join(econDF, convExp, by="expUnit")
+exclNo <- nrow(exclEvents)
+
+# Calculating expenses for each event
+econEvents <- mutate(econEvents, fullExpense = Expense*Factor)
+
+# Table of total expenses
+totalExp <- econEvents %>%
+     select(EVTYPE, fullExpense) %>%
+     group_by(EVTYPE) %>%
+     summarize(Events = length(EVTYPE),
+               Expenses = sum(fullExpense),
+               MeanExp = round(mean(fullExpense),0)) %>%
+     arrange(desc(Expenses))
+
+# Top 10 Economic effect weather events
+top10Econ <- head(totalExp, 10)
+
+kable(top10Econ, row.names = TRUE, 
+      col.names = c("Weather event", "Events", "Total expenses (USD)", 
+                    "Mean expense per event (USD"), 
+     caption = "Weather events with greatest economic effects")
+
+# Graph of total expenses
+
+# Grouping top10 events for graph
+econSummary <- econEvents %>%
+     select(EVTYPE, DamageType, fullExpense) %>%
+     filter(EVTYPE %in% top10Econ$EVTYPE) %>%
+     group_by(EVTYPE, DamageType) %>%
+     summarize(Events = length(EVTYPE),
+               Expenses = sum(fullExpense),
+               MeanExpense = mean(fullExpense)) %>%
+     arrange(desc(Expenses))
+
+ggplot(data = head(econSummary, 10), 
+       aes(x=EVTYPE, y=Expenses, fill=DamageType)) +
+     geom_col(position = "stack") +
+     geom_text(aes(label = Expenses)) +
+     theme_light() +
+     labs(title = "Weather events with highest economic expense in the US", 
+          x = "Weather event", y = "Total expenses")
 
 ```
 
 
-
-```{r injuryEvents}
-#3. Figure of top 10 injury causes and development over time
-topFatality <- head(arrange(healthData, desc(Fatality))$EVTYPE, 10)
-fatalityEvents <- subset(healthData, EVTYPE %in% topEvents)
-```
+## Summary
 
 
-
-```{r misc}
-# Subsetting health data
-#healthData <- data %>%
-#     select(EVTYPE, FATALITIES, INJURIES) %>%
-#     group_by(EVTYPE) %>%
-#     summarize(Fatality = sum(FATALITIES),
-#               Injury = sum(INJURIES))
-
-# Determining and combining the top 5 fatality and injury events
-#topFatality <- head(arrange(healthData, desc(Fatality))$EVTYPE, 5)
-#topInjury <- head(arrange(healthData, desc(Injury))$EVTYPE, 5)
-#topEvents <- unique(combine(topFatality, topInjury))
-
-# Subsetting health data based on top events
-#topHealthEvents <- subset(healthData, EVTYPE %in% topEvents)
-
-# Melting data
-#healthEvents <- melt(topHealthEvents, id.vars = "EVTYPE", 
-#                     measure.vars = c("Fatality", "Injury"), 
-#                     value.name = "Incidents", variable.name = "Result")
-
-
-#ggplot(data = healthEvents, aes(x = EVTYPE, y = Incidents)) +
-#     geom_col(fill = "green", alpha = .7) +
-#     facet_grid(Result ~ .) +
-#     theme_light()
-
-```
-
-2. Across the United States, which types of events have the greatest economic consequences?
-
-
-## Recommendations
-
-
-## R Markdown
+## References
+Link to data file
+Link to documentation
+Link to website
