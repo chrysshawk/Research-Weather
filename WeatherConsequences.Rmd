@@ -1,8 +1,9 @@
 ---
-title: "Tornados and floods have the highest impact of weather events on health and economy in the US 1950-2011"
+title: "Tornados and floods are the weather events with the highest impact on US health and economy in the period 1950 to 2011"
 author: "Christoffer Haukvik"
-date: "5 Dec 2017"
-output: html_document
+output: 
+  html_document: 
+    fig_caption: yes
 keep_md: true
 ---
 
@@ -11,21 +12,29 @@ knitr::opts_chunk$set(echo = TRUE)
 knitr::opts_chunk$set(fig.path='figure/')
 ```
 
-## Health and Economic consequences of weather events
-
 ## Synopsis
-The data analysis uses the data published by the National Weather Service to determine which weather events have had the greatest health- and economic consequences in the US from 1950 until 2011.
-To determine the greatest health impact of weather events, we have extracted the weather events and their associated fatalities and injuries for the entire period. We have grouped these data and sorted the weather events' severity according to number of fatalities. The results show that tornados by far cause the worst health effects (recorded 5633 fatalities and 91346 injuries), followed by excessive heat (recorded 1903 fatalities and 6525 injuries) and flash floods (978 fatalities and 1777 injuries).
-To determine the economic impact of weather events, we have extracted the weather events and their associated expense costs in terms of property- and crop damage. We have combined these to determine the total expense of each weather event. The results show that floods have the greatest total expenses (USD 150 billions), followed by hurricanes/typhoons (USD 719 billions) and tornados (USD 574 billions).
+This data analysis has used the data published by the National Weather Service to determine which weather events have had the greatest health- and economic consequences in the US from 1950 until 2011.  
+We seeks to answer two questions: (1) Across the United States, which types of events are most harmful with respect to population health, and (2) Across the United States, which types of events have the greatest economic consequences?  
+To determine the greatest health impact of weather events, we have extracted the weather events and their associated fatalities and injuries for the entire period, and sorted the weather events' severity according to number of fatalities. To determine the economic impact of weather events, we have extracted the weather events and their associated expense costs in terms of property- and crop damage, and combined these to determine the total expense of each weather event.  
+The results show that tornados by far cause the worst health effects (recorded 5633 fatalities and 91346 injuries), followed by excessive heat (recorded 1903 fatalities and 6525 injuries) and flash floods (978 fatalities and 1777 injuries). For economic effects, floods have the greatest total expenses (USD 150 billions), followed by hurricanes/typhoons (USD 719 billions) and tornados (USD 574 billions).  
+Our recommendation is to ensure there are plans in place to minimise the effects weather events of tornados and floods have on health and economy.
+
 
 ## Data processing
-R has been used to collect and process the data in the following sequence:
-1. Data is downloaded and loaded
-2. Data is pre-processed to only select relevant data and format as necessary
-3. Health data is extracted
-3.1 
+In this section, we describe exactly how the data has been collected and processed into the presented results. We have used R (v3.4.2) to do this.
 
-#### 1. Data downloading, extraction, and loading
+#### 1. Loading required libraries
+
+This analysis will use the libraries below in manipulating- and plotting the data.
+```{r packageLoading}
+library(dplyr, warn.conflicts = FALSE)
+library(ggplot2)
+library(knitr)
+library(reshape2)
+```
+
+
+#### 2. Data downloading, extraction, and loading
 
 Data is downloaded from the given link and loaded into a data frame.
 ```{r dataLoading, cache = TRUE}
@@ -39,24 +48,11 @@ data <- read.csv("data.csv.bz2")
 ```
 
 
-#### 2. Loading required libraries
-
-This analysis will use the libraries below in manipulating- and plotting the data.
-```{r packageLoading}
-library(dplyr)
-library(ggplot2)
-library(knitr)
-library(reshape2)
-```
-
-
 #### 3. Processing health-related data
 
-We extract the health related data (fatalities and injuries) and the weather events (EVTYPE) from the initial dataset. 
+We extract the health related data (fatalities and injuries) and the weather events (EVTYPE) from the initial dataset.  Second, we summarize the data per weather event, including the number of times the event has occurred, the totals for fatalities and injuries per event, and the mean number fo fatalities and injuries per event.
 
-In this process, we also summarize the data per weather event, including the number of times the event has occurred, the totals for fatalities and injuries per event, and the mean number fo fatalities and injuries per event.
-
-We rank this according to how many fatalities are associated with each event (from highest to lowest number).
+Finally, we order the data according to how many fatalities are associated with each weather event type (from highest to lowest number).
 
 ```{r healthProcessing}
 # Subsetting events according to fatalities and injuries
@@ -95,39 +91,42 @@ healthEvents <-
 healthEvents <- cbind(healthEvents, Rank = seq(1:nrow(healthEvents)))
 ```
 
-#### 4. Processing economic-realted data
 
-We extract the economic data associated with each weather event; namely, the property- and crop expenses suffered by the event. 
+#### 4. Processing economics-realted data
 
-We also extract the separate identifiers for the unit of expense for each category (according to the National Weather Service, these should be "K" for thousand, "M" for millions, and "B" for billions). 
-
-We also discard any events with missing data from the analysis.
-
+We extract the economic data associated with each weather event; namely, the property- and crop expenses suffered by the event.
 ```{r econExtraction}
-# Extracting relevant data
+# Extracting relevant economic data
 econData <- subset(data, select = c(EVTYPE, PROPDMG, PROPDMGEXP, 
-                                    CROPDMG, CROPDMGEXP), na.rm = TRUE)
-
+                                    CROPDMG, CROPDMGEXP))
 ```
 
+We also define and extract the identifiers for the unit of expense for each USD expense category (according to the National Weather Service; these should be "K" for thousand, "M" for millions, and "B" for billions). Since it is too uncertain to make a guess what the other labels might mean, we have excluded them from the analysis. 
 
-```{r econProcessing}
+We extract data into a new tidy dataset, where we use the above labels to multiply the expense (e.g. 150.00) with the factor (e.g. 1000 for "K") to later on being able to determine the actual dollar value (e.g. 150.000).
+```{r factorProcessing}
 # Creating dataframe for converting known damange expense multipliers
 convExp <- data.frame(expUnit = c("k", "K", "m", "M", "b", "B"),
                       Factor = c(10^3, 10^3, 10^6, 10^6, 10^9, 10^9))
 
-# Collecting the EXP (cash multiplier) variables into one
+# Extracting the EXP (cash multiplier) variables into character vector
 expUnit <- c(as.character(econData$PROPDMGEXP), 
               as.character(econData$CROPDMGEXP))
 
-# Melting dataframe
+# Melting dataframe into tidy data with event types and expenses in rows
 econDF <- melt(econData, id.vars = "EVTYPE",
                measure.vars = c("PROPDMG", "CROPDMG"),
                value.name = "Expense", variable.name = "DamageType")
 
 # Assigning units to the melted dataframe
 econDF <- cbind(econDF, expUnit)
+```
 
+Since we are not interested in any items where the expense is zero, we discard those from the analysis.
+
+We then combine the expense factors (e.g. "K" for 1000) to the data and use this to calculate the actual dollar amount for each event.
+
+```{r econProcessing, warning=FALSE}
 # Excluding any 0 expenses
 econDF <- econDF[econDF$Expense > 0, ]
 
@@ -140,8 +139,13 @@ exclNo <- nrow(exclEvents)
 
 # Calculating expenses for each event
 econEvents <- mutate(econEvents, fullExpense = Expense*Factor)
+```
 
-# Table of total expenses
+Finally, we group the data according to which weather events have the highest expenses, and include statistics on how many times each weather event has occurred, and what is the mean expense per event occurrence. 
+
+Since we are most concerned with the weather events causing the highest economic impact, we create a final dataset including the 10 most expensive events.
+```{r econSummarizing}
+# Summarising data of total expenses
 totalExp <- econEvents %>%
      select(EVTYPE, fullExpense) %>%
      group_by(EVTYPE) %>%
@@ -152,35 +156,29 @@ totalExp <- econEvents %>%
 
 # Top 10 Economic effect weather events
 top10Econ <- head(totalExp, 10)
-
 ```
 
 ## Results
-The analysis has addressed two specific questions:
-
-1. Across the United States, which types of events are most harmful with respect to population health?
-2. Across the United States, which types of events have the greatest economic consequences?
+Having processed the data as above, we return to answer the two questions this analysis has been about.
 
 #### 1. Across the United States, which types of events are most harmful with respect to population health?
 
-The data we are evaluating is measuring how weather events indirectly cause fatalities and injuries.
-
 Population harm has been measured in two categories; number of fatalities, and number of injuries. Since the former is the more serious of the two, we have chosen to primarily investigate which weather events are most fatal.
 
-To do this, we first summarize the measurements to display a table of the top 10 events which cause the most fatalities. For comparison, we also include the number of injuries which are associated to these events. In order to give an estimate of the percentage risk associated to any given event, we have also included statistics on the mean number of fatalities and injuries are associated with each event.
-
-```{r healthStats}
-#1. Table of top 10 fatality and injury causes
+To do this, we first summarize the measurements to display a table (Figure 1) of the top 10 events which cause the most fatalities. For comparison, we also include the number of injuries which are associated to these events. In order to give an estimate of the risk associated to any given event, we have also included statistics on the mean number of fatalities and injuries are associated with each event.
+```{r healthTable}
+#Figure 1: Table of top 10 fatality and injury causes
 kable(head(healthData, 10), row.names = TRUE, 
       col.names = c("Weather event", "Events", "Fatalities", "Injuries", 
                     "Fatalities (mean)", "Injuries (mean)"), 
-     caption = "Weather events with greatest health effects")
+     caption = "Figure 1: Weather events with greatest health effects")
 ```
 
-As the table illustrates, tornados are by far the weather event which has the most fatal outcomes. Of the listed events, it also causes the most injuries. Nevertheless, on a per-event basis, it is not as fatal as other of the events listes (in particular heat related events).
+As the table illustrates, tornados are by far the weather event with the most fatal outcomes. Of the listed events, it also causes the most injuries. Nevertheless, on a per-event basis, it is not as fatal as other of the events listes (in particular heat related events). However, it also ranks as the weather event with the greatest amount of injuries.
 
-```{r healthEvents}
-# Presenting data in plot
+To illustrate this visually, please look at the the below graph (Figure 2):
+```{r healthGraph}
+# Presenting data in graph
 ggplot(data = healthEvents, aes(x=reorder(EVTYPE, -Rank), 
                                 y=Incidents, fill=EVTYPE)) +
      geom_col() + 
@@ -191,53 +189,40 @@ ggplot(data = healthEvents, aes(x=reorder(EVTYPE, -Rank),
      coord_flip() +
      facet_wrap(~Category, scales = "free_x") +
      theme(strip.background = element_rect(colour="black", fill="black")) +
-     labs(title = "Severity of weather events on health in the US 1951-2011",
+     labs(title = "Figure 2: Severity of weather events on health",
           x = "Weather event", y = "Number of Health incidents")
 ```
 
-As we can see, tornados have the most sever effect on health effects, both in terms of fatalities and injuries. Second, excessive heat is another major factor in health effects.
+As we can see, tornados have the most severe effect on health effects, both in terms of fatalities and injuries. Second, excessive heat is another major factor in health effects.
 
+If the goal is to reduce the number of both fatalities and injuries as suffered by weather events, we would therefore recommend having a view on how to prevent fatalities and injuries suffered from tornado events.  
 
 #### 2. Across the United States, which types of events have the greatest economic consequences?
 
-```{r econStats}
-
-
-
+Economic consequences have been categorized as both property- and crop expenses. The table below (Figure 3) summarizes which weather events have the greatest economic consequences, and also gives insight into how many of the weather events have been recorded, as well as the mean expense per occurrence.
+```{r econResults}
 kable(top10Econ, row.names = TRUE, 
       col.names = c("Weather event", "Events", "Total expenses (USD)", 
-                    "Mean expense per event (USD"), 
-     caption = "Weather events with greatest economic effects")
-
-# Graph of total expenses
-
-# Grouping top10 events for graph
-econSummary <- econEvents %>%
-     select(EVTYPE, DamageType, fullExpense) %>%
-     filter(EVTYPE %in% top10Econ$EVTYPE) %>%
-     group_by(EVTYPE, DamageType) %>%
-     summarize(Events = length(EVTYPE),
-               Expenses = sum(fullExpense),
-               MeanExpense = mean(fullExpense)) %>%
-     arrange(desc(Expenses))
-
-ggplot(data = head(econSummary, 10), 
-       aes(x=EVTYPE, y=Expenses, fill=DamageType)) +
-     geom_col(position = "stack") +
-     geom_text(aes(label = Expenses)) +
-     theme_light() +
-     labs(title = "Weather events with highest economic expense in the US", 
-          x = "Weather event", y = "Total expenses")
-
+                    "Mean expense per event (USD)"), 
+     caption = "Figure 3: Weather events with greatest economic effects")
 ```
 
+As can be seen, floods have had the greatest economic impact for the given period, with more than twice the expense of other weather events. Nevertheless, they have a mean expense which is far below other events, such as hurricanes/tornados. Overall, we can also see that the main type of expense is related to property damages. 
 
-## Summary
+If the goal is to minimize the economic impact of weather events, we would advice to have a plan for mitigating the effects of floods in general. However, given the significant effect of hurricanes/tornados when they first strike, one might be adviced to plan for these events as well if situated in a particularly exposed area.
+
+## Recommendation
+
+In this analysis we have investigated the impact weather events in the US have had on population health and economic expenses between 1950 and 2011. 
+
+Tornados have had the greatest negative effect on population health (both fatalities and injuries) and floods have by far caused the overall greatest economic expense.
+
+To minimize the impact of weather events on population health and economic expenses, we advice to have a preparedness plan for these events, including a contingency plan in place for when they occur.
 
 
-## Links
+## External links to National Weather Service
 National Weather Service [documentation](https://d396qusza40orc.cloudfront.net/repdata%2Fpeer2_doc%2Fpd01016005curr.pdf)
 
 National Weather service [FAQ](https://d396qusza40orc.cloudfront.net/repdata%2Fpeer2_doc%2FNCDC%20Storm%20Events-FAQ%20Page.pdf)
 
-Data used for analysis [link](https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2)
+Data used for analysis:  [Link](https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2)
